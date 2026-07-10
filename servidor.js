@@ -194,16 +194,17 @@ function calcMetaDiaVendedora(nome, vendas, metaMes, diasRestantes) {
 
 // ── Z-API ─────────────────────────────────────────────────
 async function enviarWhatsApp(wappConfig, phone, message) {
-  const { instanceUrl, token, instanceToken } = wappConfig;
-  if (!instanceUrl || !phone) throw new Error('URL da instância UaZAPI não configurada');
-  const authToken = instanceToken || token;
+  // Suporta instanceUrl (novo) e instanceId (legado) como URL base
+  const baseUrlRaw = wappConfig.instanceUrl || wappConfig.instanceId || '';
+  if (!baseUrlRaw || !phone) throw new Error('URL da instância UaZAPI não configurada');
+  // Suporta instanceToken (novo) e token (legado/admin)
+  const authToken = wappConfig.instanceToken || wappConfig.token || '';
   if (!authToken) throw new Error('Token da instância UaZAPI não configurado');
   const phoneNum = phone.replace(/\D/g, '');
-  const baseUrl = instanceUrl.startsWith('http') ? instanceUrl : 'https://' + instanceUrl;
-  // UaZAPI endpoint: POST /send/text
-  // Header: token (instance token)
-  // Body: { phone, text }
+  const baseUrl = baseUrlRaw.startsWith('http') ? baseUrlRaw : 'https://' + baseUrlRaw;
+  // UaZAPI: POST /send/text, header token, body { phone, text }
   const url = new URL('/send/text', baseUrl);
+  console.log(`UaZAPI: POST ${url.toString()} phone=${phoneNum}`);
   return httpPostFull(url, { phone: phoneNum, text: message }, { token: authToken });
 }
 
@@ -319,7 +320,7 @@ async function executarEnvioManha(forcarAgora = false) {
   const gcTokens = { at: wapp.gcAt || process.env.GC_ACCESS_TOKEN, st: wapp.gcSt || process.env.GC_SECRET_TOKEN };
   const lojaId = wapp.lojaId || process.env.LOJA_ID || '364514';
 
-  if (!wapp.instanceUrl || !wapp.token) {
+  if ((!wapp.instanceUrl && !wapp.instanceId) || (!wapp.instanceToken && !wapp.token)) {
     console.log('WhatsApp: credenciais UaZAPI não configuradas');
     return { ok: false, erro: 'Credenciais UaZAPI não configuradas' };
   }
