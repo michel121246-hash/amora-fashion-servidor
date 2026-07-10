@@ -194,26 +194,30 @@ function calcMetaDiaVendedora(nome, vendas, metaMes, diasRestantes) {
 
 // ── Z-API ─────────────────────────────────────────────────
 async function enviarWhatsApp(wappConfig, phone, message) {
-  const { instanceUrl, token } = wappConfig;
-  if (!instanceUrl || !token || !phone) throw new Error('Configuração UaZAPI incompleta');
+  const { instanceUrl, token, instanceToken } = wappConfig;
+  if (!instanceUrl || !phone) throw new Error('URL da instância UaZAPI não configurada');
+  const authToken = instanceToken || token; // usa instanceToken se disponível
+  if (!authToken) throw new Error('Token da instância UaZAPI não configurado');
   const phoneNum = phone.replace(/\D/g, '');
-  // UaZAPI: POST {instanceUrl}/send/text com header token
-  const url = new URL('/send/text', instanceUrl.startsWith('http') ? instanceUrl : 'https://' + instanceUrl);
-  return httpPostUrl(url.hostname, url.pathname, { phone: phoneNum, text: message }, { token });
+  const baseUrl = instanceUrl.startsWith('http') ? instanceUrl : 'https://' + instanceUrl;
+  const url = new URL('/message/sendText', baseUrl);
+  // UaZAPI: POST /message/sendText com header token (instance token)
+  return httpPostFull(url, { phone: phoneNum, message }, { token: authToken });
 }
 
-// Helper HTTP POST com hostname separado
-function httpPostUrl(hostname, path, data, headers = {}) {
+function httpPostFull(url, data, headers = {}) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify(data);
-    const options = {
-      hostname, path, method: 'POST',
+    const opts = {
+      hostname: url.hostname,
+      path: url.pathname,
+      method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...headers }
     };
-    const req = https.request(options, (res) => {
+    const req = https.request(opts, (res) => {
       let d = '';
       res.on('data', c => d += c);
-      res.on('end', () => { try { resolve(JSON.parse(d)); } catch (e) { resolve(d); } });
+      res.on('end', () => { try { resolve(JSON.parse(d)); } catch (e) { resolve({ raw: d, status: res.statusCode }); } });
     });
     req.on('error', reject);
     req.write(body);
