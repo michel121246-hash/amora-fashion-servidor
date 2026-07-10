@@ -368,7 +368,7 @@ async function executarEnvioManha(forcarAgora = false) {
 }
 
 // ── CRON — 08:00 Brasília = 11:00 UTC, Seg-Sáb ──────────
-cron.schedule('30 11 * * 1-6', () => {
+cron.schedule('30 8 * * 1-6', () => {
   console.log('🕗 Cron: enviando mensagens matinais...');
   executarEnvioManha().then(r => console.log('Cron resultado:', r.totalEnviados, '/', r.total, 'enviados'));
 }, { timezone: 'America/Sao_Paulo' });
