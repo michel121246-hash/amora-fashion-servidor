@@ -196,13 +196,15 @@ function calcMetaDiaVendedora(nome, vendas, metaMes, diasRestantes) {
 async function enviarWhatsApp(wappConfig, phone, message) {
   const { instanceUrl, token, instanceToken } = wappConfig;
   if (!instanceUrl || !phone) throw new Error('URL da instância UaZAPI não configurada');
-  const authToken = instanceToken || token; // usa instanceToken se disponível
+  const authToken = instanceToken || token;
   if (!authToken) throw new Error('Token da instância UaZAPI não configurado');
   const phoneNum = phone.replace(/\D/g, '');
   const baseUrl = instanceUrl.startsWith('http') ? instanceUrl : 'https://' + instanceUrl;
-  const url = new URL('/message/sendText', baseUrl);
-  // UaZAPI: POST /message/sendText com header token (instance token)
-  return httpPostFull(url, { phone: phoneNum, message }, { token: authToken });
+  // UaZAPI endpoint: POST /send/text
+  // Header: token (instance token)
+  // Body: { phone, text }
+  const url = new URL('/send/text', baseUrl);
+  return httpPostFull(url, { phone: phoneNum, text: message }, { token: authToken });
 }
 
 function httpPostFull(url, data, headers = {}) {
