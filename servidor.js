@@ -7,7 +7,12 @@ const cron = require('node-cron');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const CONFIG_FILE = path.join('/tmp', 'amora_config.json');
-const CONFIG_SECRET = process.env.CONFIG_SECRET || 'amora2026';
+const CONFIG_SECRET = process.env.CONFIG_SECRET;
+
+if (!CONFIG_SECRET) {
+  console.error('ERRO FATAL: variável de ambiente CONFIG_SECRET não está definida. Configure-a antes de iniciar o servidor.');
+  process.exit(1);
+}
 
 // ── MIDDLEWARES ───────────────────────────────────────────
 app.use(express.json({ limit: '2mb' }));
