@@ -238,9 +238,17 @@ function diasUteisRestantes(ano, mes, feriados = []) {
   return Math.max(rest, 1);
 }
 
+const FORMAS_PAGAMENTO_EXCLUIR = ['VALE MERCADORIA CLIENTE', 'VALE MERCADORIA'];
 function valVenda(v) {
   const pags = v.pagamentos || [];
-  if (pags.length > 0) return pags.reduce((s, p) => s + parseFloat((p.pagamento || p).valor || (p.pagamento || p).valor_total || 0), 0);
+  if (pags.length > 0) {
+    return pags.reduce((s, p) => {
+      const pg = p.pagamento || p;
+      const nomeForma = (pg.nome_forma_pagamento || '').toUpperCase().trim();
+      if (FORMAS_PAGAMENTO_EXCLUIR.includes(nomeForma)) return s;
+      return s + parseFloat(pg.valor || pg.valor_total || 0);
+    }, 0);
+  }
   if (parseInt(v.situacao_financeiro || 1) === 0) return 0;
   return parseFloat(v.valor_total || 0);
 }
@@ -420,7 +428,12 @@ function buildMsgGerente(user, vendas, cfg, diasRestantes, frase, usuarios) {
   const ontemStr_g = fmtDate(ontemDate_g);
 
   const rankingTexto = ranking.map(([nomeUpper, d], i) => {
-    const metaDiaVend = calcMetaDiaVendedora(d.nomeOriginal, vendas, metaVendBronze, diasRestantes);
+    // Usa meta/dias individuais se essa vendedora tiver override configurado
+    const userMatch = (usuarios || []).find(u => u.role === 'vendedora' && (u.gcNome || '').toUpperCase() === nomeUpper);
+    const indR = userMatch ? cfg.individuais?.[userMatch.id] : null;
+    const metaVendR = indR?.bronze || metaVendBronze;
+    const drVendR = indR?.dias || diasRestantes;
+    const metaDiaVend = calcMetaDiaVendedora(d.nomeOriginal, vendas, metaVendR, drVendR);
     const primeiroNome = d.nomeOriginal.split(' ')[0];
     // Verifica meta batida ontem por esta vendedora
     const vendOntem = ativasMeta(vendas)
@@ -428,10 +441,13 @@ function buildMsgGerente(user, vendas, cfg, diasRestantes, frase, usuarios) {
       .reduce((s,v)=>s+valVenda(v),0);
     let medalhaOntem = '';
     if (vendOntem > 0) {
-      // Compara com meta DIÁRIA de cada nível (não mensal)
-      const mDVBronze = metaVendBronze > 0 && diasRestantes > 0 ? Math.max(metaVendBronze - metaDiaVend.vendidoAteOntem, 0) / diasRestantes : 0;
-      const mDVPrata  = metaVendPrata  > 0 && diasRestantes > 0 ? Math.max(metaVendPrata  - metaDiaVend.vendidoAteOntem, 0) / diasRestantes : 0;
-      const mDVOuro   = metaVendOuro   > 0 && diasRestantes > 0 ? Math.max(metaVendOuro   - metaDiaVend.vendidoAteOntem, 0) / diasRestantes : 0;
+      // Compara com meta DIÁRIA de cada nível (não mensal), usando override individual se houver
+      const metaVendBronzeR = indR?.bronze || metaVendBronze;
+      const metaVendPrataR  = indR?.prata  || metaVendPrata;
+      const metaVendOuroR   = indR?.ouro   || metaVendOuro;
+      const mDVBronze = metaVendBronzeR > 0 && drVendR > 0 ? Math.max(metaVendBronzeR - metaDiaVend.vendidoAteOntem, 0) / drVendR : 0;
+      const mDVPrata  = metaVendPrataR  > 0 && drVendR > 0 ? Math.max(metaVendPrataR  - metaDiaVend.vendidoAteOntem, 0) / drVendR : 0;
+      const mDVOuro   = metaVendOuroR   > 0 && drVendR > 0 ? Math.max(metaVendOuroR   - metaDiaVend.vendidoAteOntem, 0) / drVendR : 0;
       if (mDVOuro   > 0 && vendOntem >= mDVOuro)   medalhaOntem = ' 🏆🥇';
       else if (mDVPrata  > 0 && vendOntem >= mDVPrata)  medalhaOntem = ' 🎉🥈';
       else if (mDVBronze > 0 && vendOntem >= mDVBronze) medalhaOntem = ' 👏🥉';
@@ -551,12 +567,14 @@ ${relIA.texto}`;
       }
       tipo = 'gerente';
     } else if (user.gcNome && user.role === 'vendedora') {
-      // Vendedora: meta individual
-      const metaVend = cfgMes.bronze > 0 ? cfgMes.bronze / nv : 0;
-      const metaPrata = cfgMes.prata > 0 ? cfgMes.prata / nv : 0;
-      const metaOuro = cfgMes.ouro > 0 ? cfgMes.ouro / nv : 0;
-      const dados = calcMetaDiaVendedora(user.gcNome, vendas, metaVend, dr);
-      msg = buildMsgVendedora(user, dados.metaDia, dados.acumulado, dados.vendidoSoOntem||0, metaVend, metaPrata, metaOuro, dr, frase_dia);
+      // Vendedora: meta individual (usa override específico se configurado, senão o padrão dividido)
+      const ind = cfgMes.individuais?.[user.id];
+      const metaVend = ind?.bronze || (cfgMes.bronze > 0 ? cfgMes.bronze / nv : 0);
+      const metaPrata = ind?.prata || (cfgMes.prata > 0 ? cfgMes.prata / nv : 0);
+      const metaOuro = ind?.ouro || (cfgMes.ouro > 0 ? cfgMes.ouro / nv : 0);
+      const drVend = ind?.dias || dr;
+      const dados = calcMetaDiaVendedora(user.gcNome, vendas, metaVend, drVend);
+      msg = buildMsgVendedora(user, dados.metaDia, dados.acumulado, dados.vendidoSoOntem||0, metaVend, metaPrata, metaOuro, drVend, frase_dia);
       tipo = 'vendedora';
     } else continue;
 
@@ -717,4 +735,4 @@ app.post('/api/:endpoint', (req, res) => {
 
 app.get('/', (req, res) => res.json({ service: 'Amora Fashion Proxy + WhatsApp', status: 'ok', version: '3.0' }));
 
-app.listen(PORT, () => console.log(`Amora Fashion servidor rodando na porta ${PORT}`));
+app.listen(PORT, () => console.log(`Amora Fashion servidor rodando na porta ${PORT}`));v
