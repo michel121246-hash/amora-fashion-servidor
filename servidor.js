@@ -50,6 +50,7 @@ function authCheck(req, res) {
 // ── IA — ANÁLISE DIÁRIA ──────────────────────────────────────
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 let relatorioIA = null;
+let iaStatus = { rodando:false, erro:null, inicio:null, fim:null };
 
 async function gerarAnaliseIA(dados) {
   const { vendas, cfg, dr } = dados;
@@ -85,15 +86,40 @@ async function gerarAnaliseIA(dados) {
   const dataHoje = hoje.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
   const prompt = 'Voce e consultora especialista em varejo de moda feminina da Amora Fashion (Rio de Janeiro).\n\nDADOS ('+dataHoje+'):\nMes: R$'+Math.round(fatMes)+' | Bronze: R$'+(cfg.bronze||0)+' | Falta: R$'+Math.round(faltaBronze)+'\nPrata: R$'+(cfg.prata||0)+' | Ouro: R$'+(cfg.ouro||0)+' | Dias: '+dr+' | Meta/dia: R$'+Math.round(metaDia)+'\nOntem: R$'+Math.round(fatOntem)+' | '+(fatOntem>=metaDia?'META BATIDA':'R$'+Math.round(metaDia-fatOntem)+' abaixo')+'\n\nVENDEDORAS:\n'+resumoVend+'\n\nFaca analise diaria em portugues. Inclua:\n1. RESUMO ONTEM - destaques, quem ficou abaixo\n2. SITUACAO DO MES - progresso, projecao\n3. ANALISE VENDEDORAS - ticket, itens, comportamento\n4. ACOES PARA HOJE - direcionamentos praticos\n5. ALERTA/OPORTUNIDADE - destaque especial\nUse emojis, seja direto. Max 400 palavras.';
 
+  if (!ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY nao configurada no Railway (Variables).');
+  const modelos = [process.env.IA_MODEL, 'claude-sonnet-5-5', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'].filter(Boolean);
+  let ultimoErro = null;
+  for (const model of modelos) {
+    try { return await chamarClaude(model, prompt); }
+    catch (e) {
+      ultimoErro = e;
+      console.error('IA: falha com modelo '+model+': '+e.message);
+      if (!/model|not_found|404|overloaded|529/i.test(e.message)) break; // erro de chave/credito: tentar outro modelo nao adianta
+    }
+  }
+  throw ultimoErro;
+}
+
+function chamarClaude(model, prompt) {
   return new Promise((resolve, reject) => {
-    const body = JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1024,messages:[{role:'user',content:prompt}]});
-    const opts = {hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(body)}};
-    const req = https.request(opts,(res)=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{try{const r=JSON.parse(d);r.content?.[0]?resolve(r.content[0].text):reject(new Error(d.substring(0,200)));}catch(e){reject(e);}});});
+    const body = JSON.stringify({model, max_tokens:1024, messages:[{role:'user',content:prompt}]});
+    const opts = {hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',timeout:60000,headers:{'Content-Type':'application/json','x-api-key':ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(body)}};
+    const req = https.request(opts,(res)=>{let d='';res.on('data',c=>d+=c);res.on('end',()=>{
+      try{
+        const r=JSON.parse(d);
+        if(r.content?.[0]?.text) return resolve(r.content[0].text);
+        const msg = r.error?.message || d.substring(0,200);
+        reject(new Error('API '+res.statusCode+' ('+model+'): '+msg));
+      }catch(e){reject(new Error('Resposta invalida da API ('+res.statusCode+'): '+d.substring(0,120)));}
+    });});
+    req.on('timeout',()=>req.destroy(new Error('Tempo esgotado ao chamar a API da Anthropic')));
     req.on('error',reject);req.write(body);req.end();
   });
 }
 
 async function executarAnaliseDiaria() {
+  if (iaStatus.rodando && Date.now()-iaStatus.inicio < 120000) return;
+  iaStatus = { rodando:true, erro:null, inicio:Date.now(), fim:null };
   console.log('Iniciando analise IA...');
   const config = loadConfig();
   const hoje = new Date();
@@ -104,15 +130,16 @@ async function executarAnaliseDiaria() {
   const mesKey = hoje.getFullYear()+'-'+String(hoje.getMonth()+1).padStart(2,'0');
   const cfg = (config.meses||{})[mesKey]||{bronze:0,prata:0,ouro:0,numVend:4,feriados:[]};
   const dr = diasUteisRestantes(hoje.getFullYear(),hoje.getMonth()+1,cfg.feriados||[]);
-  if(!gcAt||!gcSt){console.log('IA: tokens GC ausentes');return;}
+  if(!gcAt||!gcSt){console.log('IA: tokens GC ausentes');iaStatus={rodando:false,erro:'Tokens do Gestao Click ausentes no servidor (configure em Configuracoes ou nas Variables do Railway).',inicio:iaStatus.inicio,fim:Date.now()};return;}
   try {
     const vendas = await fetchTodasVendas({data_inicio:mesIni,data_fim:fmtDate(hoje),tipo:'vendas_balcao',loja_id:lojaId},{at:gcAt,st:gcSt});
     console.log('IA: '+vendas.length+' vendas');
     const texto = await gerarAnaliseIA({vendas,cfg,dr});
     relatorioIA = {texto,geradoEm:new Date().toISOString(),dia:fmtDate(hoje)};
     const cur = loadConfig(); cur.relatorioIA = relatorioIA; saveConfig(cur);
+    iaStatus = { rodando:false, erro:null, inicio:iaStatus.inicio, fim:Date.now() };
     console.log('Analise IA concluida');
-  } catch(e) { console.error('Erro IA:',e.message); }
+  } catch(e) { console.error('Erro IA:',e.message); iaStatus = { rodando:false, erro:e.message, inicio:iaStatus.inicio, fim:Date.now() }; }
 }
 
 
@@ -646,7 +673,7 @@ app.get('/ia/relatorio', (req, res) => {
   if (!authCheck(req, res)) return;
   const config = loadConfig();
   const rel = relatorioIA || config.relatorioIA || null;
-  res.json({ ok: true, relatorio: rel });
+  res.json({ ok: true, relatorio: rel, rodando: iaStatus.rodando, erro: iaStatus.erro });
 });
 app.post('/ia/gerar', async (req, res) => {
   if (!authCheck(req, res)) return;
