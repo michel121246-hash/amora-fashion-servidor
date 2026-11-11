@@ -774,13 +774,18 @@ app.get('/config', (req, res) => {
 
 app.post('/config', (req, res) => {
   if (!authCheck(req, res)) return;
-  const { meses, usuarios, wapp } = req.body;
-  if (!meses && !usuarios && !wapp) return res.status(400).json({ error: 'Payload inválido' });
+  const { meses, usuarios, wapp, dre } = req.body;
+  if (!meses && !usuarios && !wapp && !dre) return res.status(400).json({ error: 'Payload inválido' });
   const current = loadConfig();
   const updated = {
+    ...current, // não perde campos que esta rota não conhece
     meses: meses !== undefined ? meses : current.meses,
     usuarios: usuarios !== undefined ? usuarios : current.usuarios,
     wapp: wapp !== undefined ? { ...current.wapp, ...wapp } : current.wapp,
+    // DRE (taxas da maquininha): só aceita números entre 0 e 30
+    dre: (dre && typeof dre === 'object' && dre.taxas && typeof dre.taxas === 'object')
+      ? { ...(current.dre || {}), taxas: Object.fromEntries(Object.entries(dre.taxas).filter(([k, v]) => ['debito', 'credito', 'pix'].includes(k) && typeof v === 'number' && v >= 0 && v < 30)) }
+      : current.dre,
     updatedAt: new Date().toISOString()
   };
   const ok = saveConfig(updated);
