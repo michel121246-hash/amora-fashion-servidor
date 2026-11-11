@@ -239,7 +239,41 @@ async function fetchTodasVendas(params, tokens) {
     pagina++;
   }
   console.log(`fetchTodasVendas: total ${todas.length} vendas`);
+  await corrigirVendedores(todas, tokens);
   return todas;
+}
+
+// O GC às vezes devolve vendas com "nome_vendedor" vazio e só o "vendedor_id"
+// (ex.: vendas 54143 e 54128 de 04/11/2026). Sem o nome, elas ficavam fora da
+// vendedora certa no WhatsApp e na análise de IA. Preenche o nome pelo código.
+let cacheFuncionarios = { ts: 0, mapa: {} };
+async function mapaFuncionarios(tokens) {
+  if (Date.now() - cacheFuncionarios.ts < 6 * 60 * 60 * 1000 && Object.keys(cacheFuncionarios.mapa).length) {
+    return cacheFuncionarios.mapa;
+  }
+  const mapa = {};
+  try {
+    const res = await fetchGC('funcionarios', { pagina: 1, registros_por_pagina: 100 }, tokens);
+    (res?.data || []).forEach(f => { if (f && f.id != null && (f.nome || '').trim()) mapa[String(f.id)] = f.nome.trim(); });
+    cacheFuncionarios = { ts: Date.now(), mapa };
+  } catch (e) {
+    console.error('Erro ao buscar funcionários do GC:', e.message);
+  }
+  return mapa;
+}
+async function corrigirVendedores(vendas, tokens) {
+  const semNome = vendas.filter(v => !(v.nome_vendedor || '').trim() && v.vendedor_id);
+  if (!semNome.length) return vendas;
+  const mapa = { ...(await mapaFuncionarios(tokens)) };
+  // reserva: nomes vistos em outras vendas da mesma pessoa
+  vendas.forEach(v => {
+    const id = v.vendedor_id != null ? String(v.vendedor_id) : '';
+    if (id && (v.nome_vendedor || '').trim() && !mapa[id]) mapa[id] = v.nome_vendedor.trim();
+  });
+  let n = 0;
+  semNome.forEach(v => { const nm = mapa[String(v.vendedor_id)]; if (nm) { v.nome_vendedor = nm; n++; } });
+  console.log(`corrigirVendedores: ${n} de ${semNome.length} vendas sem nome de vendedor corrigidas`);
+  return vendas;
 }
 
 // ── CÁLCULO DE METAS ──────────────────────────────────────
