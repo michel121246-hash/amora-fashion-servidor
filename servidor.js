@@ -216,14 +216,28 @@ function httpGet(hostname, path, headers = {}) {
 }
 
 // ── GESTÃO CLICK ──────────────────────────────────────────
+// O GC aceita no máximo 30 consultas/segundo por token (o painel usa o mesmo token).
+// Quando passa disso ele responde {code:429} — antes isso era lido como "fim das
+// vendas" e a lista vinha cortada. Agora espera e tenta de novo.
 async function fetchGC(endpoint, params, tokens) {
   const qs = new URLSearchParams(params).toString();
   const path = `/api/${endpoint}${qs ? '?' + qs : ''}`;
-  return httpGet('api.gestaoclick.com', path, {
-    'access-token': tokens.at,
-    'secret-access-token': tokens.st,
-    'Content-Type': 'application/json'
-  });
+  let ultimo = '';
+  for (let tent = 0; tent < 6; tent++) {
+    if (tent) await new Promise(r => setTimeout(r, Math.min(1500 * tent, 6000)));
+    let res;
+    try {
+      res = await httpGet('api.gestaoclick.com', path, {
+        'access-token': tokens.at,
+        'secret-access-token': tokens.st,
+        'Content-Type': 'application/json'
+      });
+    } catch (e) { ultimo = e.message; continue; }
+    if (res && typeof res === 'object' && res.code === 429) { ultimo = 'limite 429'; continue; }
+    if (typeof res !== 'object' || res === null) { ultimo = 'resposta inválida'; continue; }
+    return res;
+  }
+  throw new Error(`Gestão Click não respondeu (${endpoint}): ${ultimo}`);
 }
 
 async function fetchTodasVendas(params, tokens) {
@@ -231,8 +245,8 @@ async function fetchTodasVendas(params, tokens) {
   const POR_PAGINA = 100; // GC limita 100 por página
   while (true) {
     const res = await fetchGC('vendas', { ...params, pagina, registros_por_pagina: POR_PAGINA }, tokens);
-    const lista = res?.data || res?.registros || res?.vendas || [];
-    if (!lista.length) break;
+    const lista = Array.isArray(res?.data) ? res.data : (res?.registros || res?.vendas || []);
+    if (!Array.isArray(lista) || !lista.length) break;
     todas = todas.concat(lista);
     console.log(`Página ${pagina}: ${lista.length} vendas (total: ${todas.length})`);
     if (lista.length < POR_PAGINA) break; // última página
