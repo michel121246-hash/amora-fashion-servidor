@@ -52,6 +52,29 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 let relatorioIA = null;
 let iaStatus = { rodando:false, erro:null, inicio:null, fim:null };
 
+// Nº de vendedoras do mês = quantas têm a meta individual PREENCHIDA (valor ou data).
+// Vendedora com o quadro em branco não conta. Se nenhuma foi preenchida, usa o número digitado.
+function vendedoraPreenchida(ind) {
+  return !!ind && (Number(ind.bronze) > 0 || Number(ind.prata) > 0 || Number(ind.ouro) > 0 || !!ind.dataInicio);
+}
+function normalizarCfgMes(cfg) {
+  const c = { ...(cfg || {}) };
+  const ind = {};
+  Object.entries(c.individuais || {}).forEach(([id, v]) => { if (vendedoraPreenchida(v)) ind[id] = v; });
+  c.individuais = ind;
+  const n = Object.keys(ind).length;
+  if (n > 0) c.numVend = n;
+  return c;
+}
+// Venda administrativa: feita no usuário da gerente/admin (ex.: "Gerente am 3").
+// Conta no total da LOJA, mas não é vendedora: não entra em ranking nem em meta individual.
+function ehAdministrativo(nome, usuarios) {
+  const n = String(nome || '').trim().toUpperCase();
+  if (!n) return false;
+  if (n.includes('GERENTE')) return true;
+  return (usuarios || []).some(u => (u.role === 'gerente' || u.role === 'admin') && String(u.gcNome || '').trim().toUpperCase() === n);
+}
+
 async function gerarAnaliseIA(dados) {
   const { vendas, cfg, dr } = dados;
   const nv = Math.max(cfg.numVend || 4, 1);
@@ -79,6 +102,9 @@ async function gerarAnaliseIA(dados) {
     const ticket = d.qtd > 0 ? Math.round(d.total/d.qtd) : 0;
     const itens = d.qtd > 0 ? (d.prods/d.qtd).toFixed(1) : 0;
     const ov = agrOntem[nome] || { total:0, qtd:0 };
+    if (ehAdministrativo(nome, (loadConfig().usuarios || []))) {
+      return '- '+nome+' (VENDA ADMINISTRATIVA da loja, nao e vendedora, nao avaliar): Mes R$'+Math.round(d.total)+' | Ontem R$'+Math.round(ov.total);
+    }
     const pct = cfg.bronze > 0 ? Math.round(d.total/(cfg.bronze/nv)*100) : 0;
     return (i+1)+'. '+nome+': Mes R$'+Math.round(d.total)+' ('+pct+'%) | Ontem R$'+Math.round(ov.total)+'('+ov.qtd+' vendas) | Ticket R$'+ticket+' | '+itens+' itens/venda';
   }).join('\n');
@@ -128,7 +154,7 @@ async function executarAnaliseDiaria() {
   const gcSt = config.wapp?.gcSt||process.env.GC_SECRET_TOKEN;
   const lojaId = config.wapp?.lojaId||'364514';
   const mesKey = hoje.getFullYear()+'-'+String(hoje.getMonth()+1).padStart(2,'0');
-  const cfg = (config.meses||{})[mesKey]||{bronze:0,prata:0,ouro:0,numVend:4,feriados:[]};
+  const cfg = normalizarCfgMes((config.meses||{})[mesKey]||{bronze:0,prata:0,ouro:0,numVend:4,feriados:[]});
   const dr = diasUteisRestantes(hoje.getFullYear(),hoje.getMonth()+1,cfg.feriados||[]);
   if(!gcAt||!gcSt){console.log('IA: tokens GC ausentes');iaStatus={rodando:false,erro:'Tokens do Gestao Click ausentes no servidor (configure em Configuracoes ou nas Variables do Railway).',inicio:iaStatus.inicio,fim:Date.now()};return;}
   try {
@@ -506,8 +532,8 @@ function buildMsgGerente(user, vendas, cfg, diasRestantes, frase, usuarios) {
   ativasMeta(vendas).forEach(v => {
     const n = (v.nome_vendedor || '').toUpperCase();
     if (!n || n === 'SEM VENDEDOR') return;
-    // Exclui gerentes e admins
-    if (naoVendedoras.has(n)) return;
+    // Exclui gerentes, admins e vendas administrativas ("Gerente am 3")
+    if (naoVendedoras.has(n) || ehAdministrativo(n, usuarios)) return;
     if (!agr[n]) agr[n] = { total: 0, nomeOriginal: v.nome_vendedor || n };
     agr[n].total += valVenda(v);
   });
@@ -632,7 +658,7 @@ async function executarEnvioManha(forcarAgora = false) {
   const mesIni = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`;
   const mesFim = fmtDate(hoje);
   const cfgMesKey = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
-  const cfgMes = meses[cfgMesKey] || { bronze: 0, prata: 0, ouro: 0, numVend: 4, feriados: [] };
+  const cfgMes = normalizarCfgMes(meses[cfgMesKey] || { bronze: 0, prata: 0, ouro: 0, numVend: 4, feriados: [] });
   const nv = Math.max(cfgMes.numVend || 4, 1);
   const dr = diasUteisRestantes(hoje.getFullYear(), hoje.getMonth() + 1, cfgMes.feriados || []);
   const frase = getFraseHoje();
