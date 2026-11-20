@@ -134,7 +134,7 @@ const Scene: React.FC<{ dur: number; children: React.ReactNode }> = ({ dur, chil
 };
 
 // Word-by-word blur reveal
-const Reveal: React.FC<{ text: string; delay?: number; style?: React.CSSProperties; stagger?: number }> = ({
+export const Reveal: React.FC<{ text: string; delay?: number; style?: React.CSSProperties; stagger?: number }> = ({
   text,
   delay = 0,
   style,
@@ -194,7 +194,7 @@ const Chip: React.FC<{ label: string; delay: number; accent?: boolean }> = ({ la
 };
 
 // ---------- background
-const Background: React.FC = () => {
+export const Background: React.FC = () => {
   const f = useCurrentFrame();
   const t = f / FPS;
   const orb = (x: number, y: number, r: number, c: string, sp: number, ph: number) => (
@@ -476,7 +476,7 @@ const Seats: React.FC = () => {
   );
 };
 
-const QR: React.FC<{ size: number }> = ({ size }) => {
+export const QR: React.FC<{ size: number }> = ({ size }) => {
   const n = 21;
   const cells: React.ReactNode[] = [];
   const finder = (x: number, y: number) =>

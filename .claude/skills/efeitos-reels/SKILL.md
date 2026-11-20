@@ -51,6 +51,7 @@ Ja trazem SFX licenciados, punch-in e grain. Unico passo pago: matte.
   | timeline | `Timeline` (trilhas + agulha brilhando + %) | processo/andamento |
   | match-cut | `MatchCut` (paginas com a mesma palavra fixa) | palavra-chave: NOVIDADE, PROMOCAO |
   | apple-toggles | `AppleToggles` (toggles iOS acendendo) | beneficios on/off |
+- `MeuBagageiro2` (`src/MeuBagageiro2.tsx`): video sem gravacao usando os 7 efeitos + narracao ja paga (`public/vo.mp3`, nao versionado; media_id Higgsfield `2e344170-eb68-4c68-9f28-578be2968ce4`). Reaproveitar narracoes pagas sempre que der = custo zero.
 - Demo de referencia: composicao `EfeitosDemo` (`src/EfeitosDemo.tsx`) aplicada ao video da Amora.
 - Fluxo com video gravado: transcrever (faster-whisper no sandbox Higgsfield) -> escolher momentos pelas palavras -> `<OffthreadVideo>` + efeitos em `<Sequence from=...>` -> SFX nos momentos -> render -> loudnorm `-14 LUFS` -> SendUserFile.
 

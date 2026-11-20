@@ -82,17 +82,18 @@ export const GlassWidgets: React.FC<{ dur: number; items: Widget[] }> = ({ dur, 
 };
 
 // 2) ORBITS — miniaturas girando em volta da cabeca (profundidade por escala/opacidade)
-export const Orbit: React.FC<{ dur: number; images: string[]; cx?: number; cy?: number; rx?: number; ry?: number; lap?: number }> = ({
-  dur, images, cx = 540, cy = 560, rx = 420, ry = 120, lap = 150,
+export const Orbit: React.FC<{ dur: number; images?: string[]; nodes?: React.ReactNode[]; cx?: number; cy?: number; rx?: number; ry?: number; lap?: number }> = ({
+  dur, images = [], nodes, cx = 540, cy = 560, rx = 420, ry = 120, lap = 150,
 }) => {
+  const list: React.ReactNode[] = nodes ?? images.map((src) => <Img src={staticFile(src)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />);
   const f = useCurrentFrame();
   const inO = interpolate(f, [0, 15], [0, 1], clamp);
   const out = interpolate(f, [dur - 12, dur], [1, 0], clamp);
   const grow = interpolate(f, [0, 20], [0.3, 1], { ...clamp, easing: Easing.out(Easing.back(1.5)) });
   return (
     <AbsoluteFill>
-      {images.map((src, i) => {
-        const a = (f / lap) * Math.PI * 2 + (i / images.length) * Math.PI * 2;
+      {list.map((node, i) => {
+        const a = (f / lap) * Math.PI * 2 + (i / list.length) * Math.PI * 2;
         const z = Math.sin(a); // -1 atras, +1 frente
         const sc = 0.72 + 0.28 * (z + 1) / 2;
         return (
@@ -100,7 +101,7 @@ export const Orbit: React.FC<{ dur: number; images: string[]; cx?: number; cy?: 
             width: 170, height: 230, borderRadius: 22, overflow: "hidden", border: "4px solid #fff",
             boxShadow: "0 20px 40px rgba(0,0,0,0.4)", transform: `scale(${sc}) rotate(${Math.cos(a) * 8}deg)`,
             opacity: inO * out * (0.55 + 0.45 * (z + 1) / 2), zIndex: Math.round(z * 10) + 10 }}>
-            <Img src={staticFile(src)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            {node}
           </div>
         );
       })}
@@ -190,8 +191,8 @@ export const Timeline: React.FC<{ dur: number; title?: string; y?: number }> = (
 };
 
 // 6) MATCH-CUT — cortes rapidos entre "paginas" fixando a mesma palavra no mesmo lugar
-export const MatchCut: React.FC<{ dur: number; word: string; pages: { site: string; before: string; after: string; bg?: string }[]; every?: number }> = ({
-  dur, word, pages, every = 7,
+export const MatchCut: React.FC<{ dur: number; word: string; pages: { site: string; before: string; after: string; bg?: string }[]; every?: number; meta?: string }> = ({
+  dur, word, pages, every = 7, meta = "Moda",
 }) => {
   const f = useCurrentFrame();
   const i = Math.min(pages.length - 1, Math.floor(f / every));
@@ -201,7 +202,7 @@ export const MatchCut: React.FC<{ dur: number; word: string; pages: { site: stri
   return (
     <AbsoluteFill style={{ background: pg.bg ?? "#FBFAF7", fontFamily: FONT, opacity: o }}>
       <div style={{ position: "absolute", top: 120, left: 80, right: 80, display: "flex", justifyContent: "space-between", color: "#111", fontSize: 30, fontWeight: 800 }}>
-        <span>{pg.site}</span><span style={{ color: "#999", fontWeight: 600 }}>{"Moda · " + (i + 1) + " min"}</span>
+        <span>{pg.site}</span><span style={{ color: "#999", fontWeight: 600 }}>{meta + " · " + (i + 1) + " min"}</span>
       </div>
       {[0, 1, 2, 3].map((k) => (
         <div key={k} style={{ position: "absolute", left: 80, right: 80 + (k % 2) * 160, top: 1240 + k * 60, height: 22, borderRadius: 11, background: "rgba(0,0,0,0.08)" }} />))}
