@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__higgsfield",
+      "Bash(ffmpeg:*)",
+      "Bash(ffprobe:*)",
+      "Bash(curl:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(ls:*)"
+    ]
+  }
+}
